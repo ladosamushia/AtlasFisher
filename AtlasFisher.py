@@ -4,36 +4,31 @@ https://arxiv.org/pdf/1802.01539.pdf
 '''
 
 #Load and interpolate Pk Data
-PP = np.loadtxt("test_matterpower.dat")
-K = PP[:,0]
-P = PP[:,1]*0.8**2
-fPk = interpolate.interp1d(K, P, kind='cubic')
-
-#k, mu, and theta ranges
-kmax = 0.2
-mumax = 1.0
-thmax = 2*np.pi
+def init_Pk(Pk, sigma8):
+    PP = np.loadtxt(Pk_file)
+    K = PP[:,0]
+    P = PP[:,1]*sigma8**2
+    fPk = interpolate.interp1d(K, P, kind='cubic', bounds_error = False,
+                               fill_value = 0)
+    return fPk
 
 #Power Spectrum Interpolation 
-def Piso(k):
-    if k < K[0] or k > K[-1]:
-        return 0
+def Piso(fPk, k):
     pow = fPk(k)
     return pow
 
-def Pow(k,mu):
-    if k < K[0]:
-        return 0
-    pow = (b1+f*mu**2)**2*Piso(k)
+def Pow(fPk, k,mu):
+    pow = (b1+f*mu**2)**2*Piso(fPk, k)
     return pow
 
 #Bispectrum Function
-#LS. Let's make it a function of eta_i = k_i**2/2,mu1,phi12
-def Bisp(eta1,eta2,eta3,mu1,phi12):
-    # Back to k
-    k1 = sqrt(2*eta1)
-    k2 = sqrt(2*eta2)
-    k3 = sqrt(2*eta3)
+# park - shape parameters
+# parc - cosmological parameters
+def Bisp(park, parc, fPk):
+
+    k1, k2, k3, mu, phi12 = park
+    b1, b2, f, apar, aper, sigmav = parc
+
     if (k1 < k2): 
         return 0
     if (k3 < k1 - k2 or k3 > k1 + k2): 
@@ -82,116 +77,79 @@ def Bisp(eta1,eta2,eta3,mu1,phi12):
     Z2k31 = b2/2. + b1*F31 + f*mu3p1**2*G31
     Z2k31 += f*mu3p1*k31/2.*(mu3/k3*Z1k1 + mu1/k1*Z1k3)
 
-    Bi = 2*Z2k12*Z1k1*Z1k2*Piso(k1)*Piso(k2)
-    Bi += 2*Z2k23*Z1k2*Z1k3*Piso(k2)*Piso(k3)
-    Bi += 2*Z2k31*Z1k3*Z1k1*Piso(k3)*Piso(k1)
+    Bi = 2*Z2k12*Z1k1*Z1k2*Piso(fPk, k1)*Piso(fPk, k2)
+    Bi += 2*Z2k23*Z1k2*Z1k3*Piso(fPk, k2)*Piso(fPk, k3)
+    Bi += 2*Z2k31*Z1k3*Z1k1*Piso(fPk, k3)*Piso(fPk, k1)
+
+    # Fingers of God
+    Bi *= np.exp(- k1**2*mu1**2*sigmav**2/2) 
+    Bi *= np.exp(- k2**2*mu2**2*sigmav**2/2) 
+    Bi *= np.exp(- k3**2*mu3**2*sigmav**2/2) 
 
     return Bi
 
 #Bispectrum derivatives
-def dBdb1(k1, mu1, k2, mu2, theta):
-    global b1
-    eps = 1e-6
-    B0 = Bisp(k1, mu1, k2, mu2, theta)
-    b1 += eps
-    B1 = Bisp(k1, mu1, k2, mu2, theta)
-    b1 -= eps
-    return (B1 - B0)/eps
+# Return a vector of derivatives for all cosmological parameters
+def dBisp(park, parc, fPk):
+    Npar = np.size(parc)
+    dB = np.zeros(Npar)
+    eps = 0.001
+    for i in range(Npar):
+       parcfin = np.copy(parc)
+       parcfin[i] += parcfin[i]*eps
+       Bini = Bisp(park, parc, fPk)
+       Bfin = Bisp(park, parcfin, fPk)
+       dB[i] = (Bfin - Bini)/eps
+    return dB
 
-def dBdb2(k1, mu1, k2, mu2, theta):
-    global b2
-    eps = 1e-6
-    B0 = Bisp(k1, mu1, k2, mu2, theta)
-    b2 += eps
-    B1 = Bisp(k1, mu1, k2, mu2, theta)
-    b2 -= eps
-    return (B1 - B0)/eps
+#BiSpectrum Covariance for fixed triangular configuration
+def CovB(park, navg, fPk):
+    
+    bignumber = 10000000000
 
-def dBdf(k1, mu1, k2, mu2, theta):
-    global f
-    eps = 1e-6
-    B0 = Bisp(k1, mu1, k2, mu2, theta)
-    f += eps
-    B1 = Bisp(k1, mu1, k2, mu2, theta)
-    f -= eps
-    return (B1 - B0)/eps
-
-def dBdapar(k1, mu1, k2, mu2, theta):
-    global apar
-    eps = 1e-6
-    B0 = Bisp(k1, mu1, k2, mu2, theta)
-    apar += eps
-    B1 = Bisp(k1, mu1, k2, mu2, theta)
-    apar -= eps
-    return (B1 - B0)/eps
-
-#BiSpectrum Covariance
-def CovB(eta1,eta2,eta3,mu1,phi12):
-    k1 = sqrt(2*eta1)
-    k2 = sqrt(2*eta2)
-    k3 = sqrt(2*eta3)
+    k1, k2, k3, mu1, phi12 = park
     if (k1 < k2):
-        return 10000000000
+        return bignumber
     if (k3 < k1 - k2 or k3 > k1 + k2):
-        return 10000000000
+        return bignumber
 
     mu12 = (k3**2 - k1**2 - k2**2)/2/k1/k2
     mu2 = mu1*mu12 - sqrt(1 - mu1**2)*sqrt(1 - mu12**2)*cos(phi12)
     mu3 = -(mu1*k1 + mu2*k2)/k3
     
-    C = (Pow(k1,mu1)+1/navg)*(Pow(k2,mu2)+1/navg)*(Pow(k3,mu3)+1/navg)
+    C1 = (Pow(fPk, k1, mu1) + 1/navg)
+    C2 = (Pow(fPk, k2, mu2) + 1/navg)
+    C3 = (Pow(fPk, k3, mu3) + 1/navg)
+    C = C1*C2*C3
+
     return C
 
 # Compute Fisher Matrix of Bkk
-def FisherB(b1,b2,f,apar,aper):
-#Fisher Matrix
-    FM = np.array(np.zeros((5,5)))
+# in a redshift slice of given Vs and constant navg
+def FisherB(parc, Vs, navg, kmax, fPk):
+
+    #Number of Monte Carlo points
+    NMC = 10000
+
+    Npar = np.size(parc)
+    #Fisher Matrix
+    FM = np.zeros((Npar,Npar))
 
     Vol = Vs/(2*np.pi)**5 
-#Monte Carlo integration in 5D
+    #Monte Carlo integration in 5D
     etamax = kmax**2/2
-    MCvol = etamax**3*mumax*thmax
-#Number of Monte Carlo points
-    NMC = 10000
+    MCvol = etamax**3*2*np.pi
     RR = random.rand(NMC,5)
     for i in range(NMC):
-        eta1 = etamax*RR[i,0]
-        eta2 = etamax*RR[i,1]
-        eta3 = etamax*RR[i,2]
-        mu1 = 2*mumax*RR[i,3] - 1
-        phi12 = thmax*RR[i,4]
-        CB = CovB(eta1,eta2,eta3,mu1,phi12)
-        db1 = dBdb1(eta1,eta2,eta3,mu1,phi12)
-        db2 = dBdb2(eta1,eta2,eta3,mu1,phi12)
-        df = dBdf(eta1,eta2,eta3,mu1,phi12)
-        dapar = dBdapar(eta1,eta2,eta3,mu1,phi12)
-        daper = dBdaper(eta1,eta2,eta3,mu1,phi12)
-        FM[0,0] += db1**2/CB
-        FM[0,1] += db1*db2/CB
-        FM[0,2] += db1*df/CB
-        FM[0,3] += db1*dapar/CB
-        FM[0,4] += db1*daper/CB
-        FM[1,1] += db2**2/CB
-        FM[1,2] += db2*df/CB
-        FM[1,3] += db2*dapar/CB
-        FM[1,4] += db2*daper/CB
-        FM[2,2] += df**2/CB
-        FM[2,3] += df*dapar/CB
-        FM[2,4] += df*daper/CB
-        FM[3,3] += dapar**2/CB
-        FM[3,4] += dapar*daper/CB
-        FM[4,4] += daper**2/CB
-
-    FM[1,0] = FM[0,1]
-    FM[2,0] = FM[0,2]
-    FM[3,0] = FM[0,3]
-    FM[4,0] = FM[0,4]
-    FM[2,1] = FM[1,2]
-    FM[3,1] = FM[1,3]
-    FM[4,1] = FM[1,4]
-    FM[3,2] = FM[2,3]
-    FM[4,2] = FM[2,4]
-    FM[4,3] = FM[3,4]
+        k1 = np.sqrt(2*etamax*RR[i,0])
+        k2 = np.sqrt(2*etamax*RR[i,1])
+        k3 = np.sqrt(2*etamax*RR[i,2])
+        mu1 = 2*RR[i,3] - 1
+        phi12 = 2*np.pi*RR[i,4]
+        park = (k1, k2, k3, mu1, phi12)
+        CB = CovB(park, navg, fPk)
+        db = dBisp(park, parc, fPk)
+        FM += np.outer(dB,dB)/CB
 
     FM *= Vol*MCvol/NMC/2
 
