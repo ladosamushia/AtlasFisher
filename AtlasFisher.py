@@ -11,13 +11,13 @@ Ntotal = 183000000.0
 # Atlas area as fraction of total sky
 Area = 2000.0/42000.0
 # Maximum wavenumber to go to
-kmax = 0.3
+kmax = 0.25
 # power and amplitude
 Om = 0.3
 Ol = 1 - Om
 sigma8 = 0.8
-fPk = BF.init_Pk('test_matterpower.dat', sigma8)
 clight = 3000.0
+sigmav = 270.0/70
 # Cosmological parameters
 parcosmo = (-1, 0, 0.3, 0, 0.7)
 
@@ -54,18 +54,20 @@ def f(z,par):
     return -(lnG2-lnG1)/dz*(1+z)
 
 # Load number densities
-zmin, zmax, fraction = np.loadtxt('navg.txt', unpack = True)
+zmin, zmax, fraction = np.loadtxt('navg_fine_bin.txt', unpack = True)
 Ngal = fraction*Ntotal
 zmid = (zmin + zmax)/2.
 
 for i in range(np.size(zmid)):
     redshift = zmid[i]
+    amplitude = sigma8*G(redshift, parcosmo)/G(0, parcosmo)
+    fPk = BF.init_Pk('test_matterpower.dat', amplitude)
     print('redshift ', redshift)
     Vs = volume(zmin[i], zmax[i])
-    b1 = 2*G(0.43, parcosmo)/G(redshift, parcosmo)
+    b1 = 0.84*G(0, parcosmo)/G(redshift, parcosmo)
     b2 = 0
     fz = f(redshift, parcosmo)
-    parc = (b1, b2, fz, 1, 1, 0)
+    parc = (b1, b2, fz, 1, 1, sigmav)
     navg = Ngal[i]/Vs
     FM = BF.FisherB(parc, Vs, navg, kmax, fPk)
     CV = np.linalg.inv(FM) 
