@@ -84,7 +84,6 @@ def Bisp(park, parc, fPk):
     Bi = 2*Z2k12*Z1k1*Z1k2*Piso(fPk, k1)*Piso(fPk, k2)
     Bi += 2*Z2k23*Z1k2*Z1k3*Piso(fPk, k2)*Piso(fPk, k3)
     Bi += 2*Z2k31*Z1k3*Z1k1*Piso(fPk, k3)*Piso(fPk, k1)
-
     # Fingers of God
     Bi *= np.exp(- k1**2*mu1**2*sigmav**2/2) 
     Bi *= np.exp(- k2**2*mu2**2*sigmav**2/2) 
@@ -102,7 +101,7 @@ def dBisp(park, parc, fPk):
 
     for i in range(Npar):
        parcfin = np.copy(parc)
-       parcfin[i] += parcfin[i]*eps
+       parcfin[i] += (parc[i] + 1)*eps
        Bini = Bisp(park, parc, fPk)
        Bfin = Bisp(park, parcfin, fPk)
        dB[i] = (Bfin - Bini)/eps
