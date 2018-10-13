@@ -59,11 +59,16 @@ Ngal = fraction*Ntotal
 zmid = (zmin + zmax)/2.
 
 for i in range(np.size(zmid)):
+    redshift = zmid[i]
+    print('redshift ', redshift)
     Vs = volume(zmin[i], zmax[i])
-    b1 = 2*G(0.43, parcosmo)/G(zmid[i], parcosmo)
+    b1 = 2*G(0.43, parcosmo)/G(redshift, parcosmo)
     b2 = 0
-    fz = f(zmid[i], parcosmo)
+    fz = f(redshift, parcosmo)
     parc = (b1, b2, fz, 1, 1, 0)
     navg = Ngal[i]/Vs
     FM = BF.FisherB(parc, Vs, navg, kmax, fPk)
-    print(FM)
+    CV = np.linalg.inv(FM) 
+    print('f ', 100*np.sqrt(CV[2][2])/fz, '%')
+    print('apar ', 100*np.sqrt(CV[3][3]), '%')
+    print('aper ', 100*np.sqrt(CV[4][4]), '%')
