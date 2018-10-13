@@ -3,8 +3,11 @@ This code will compute Bispectrum Fisher matrix predictions for ATLAS project
 https://arxiv.org/pdf/1802.01539.pdf
 '''
 
+import numpy as np
+from scipy import interpolate
+
 #Load and interpolate Pk Data
-def init_Pk(Pk, sigma8):
+def init_Pk(Pk_file, sigma8):
     PP = np.loadtxt(Pk_file)
     K = PP[:,0]
     P = PP[:,1]*sigma8**2
@@ -17,8 +20,9 @@ def Piso(fPk, k):
     pow = fPk(k)
     return pow
 
-def Pow(fPk, k,mu):
-    pow = (b1+f*mu**2)**2*Piso(fPk, k)
+def Pow(fPk, k, mu, parc):
+    b1, b2, f, apar, aper, sigmav = parc
+    pow = (b1 + f*mu**2)**2*Piso(fPk, k)
     return pow
 
 #Bispectrum Function
@@ -26,7 +30,7 @@ def Pow(fPk, k,mu):
 # parc - cosmological parameters
 def Bisp(park, parc, fPk):
 
-    k1, k2, k3, mu, phi12 = park
+    k1, k2, k3, mu1, phi12 = park
     b1, b2, f, apar, aper, sigmav = parc
 
     if (k1 < k2): 
@@ -35,7 +39,7 @@ def Bisp(park, parc, fPk):
         return 0
 
     mu12 = (k3**2 - k1**2 - k2**2)/2/k1/k2
-    mu2 = mu1*mu12 - sqrt(1 - mu1**2)*sqrt(1 - mu12**2)*cos(phi12)
+    mu2 = mu1*mu12 - np.sqrt(1 - mu1**2)*np.sqrt(1 - mu12**2)*np.cos(phi12)
     mu3 = -(mu1*k1 + mu2*k2)/k3
 
     # rescale for AP
@@ -50,9 +54,9 @@ def Bisp(park, parc, fPk):
     mu31 = -(k1 + k2*mu12)/k3
     mu23 = -(k1*mu12 + k2)/k3
 
-    k12 = sqrt(k1**2 + k2**2 + 2*k1*k2*mu12)
-    k23 = sqrt(k2**2 + k3**2 + 2*k2*k3*mu23)
-    k31 = sqrt(k3**2 + k1**2 + 2*k3*k1*mu31)
+    k12 = np.sqrt(k1**2 + k2**2 + 2*k1*k2*mu12)
+    k23 = np.sqrt(k2**2 + k3**2 + 2*k2*k3*mu23)
+    k31 = np.sqrt(k3**2 + k1**2 + 2*k3*k1*mu31)
 
     Z1k1 = b1 + f*mu1**2
     Z1k2 = b1 + f*mu2**2
@@ -91,19 +95,22 @@ def Bisp(park, parc, fPk):
 #Bispectrum derivatives
 # Return a vector of derivatives for all cosmological parameters
 def dBisp(park, parc, fPk):
+
     Npar = np.size(parc)
     dB = np.zeros(Npar)
     eps = 0.001
+
     for i in range(Npar):
        parcfin = np.copy(parc)
        parcfin[i] += parcfin[i]*eps
        Bini = Bisp(park, parc, fPk)
        Bfin = Bisp(park, parcfin, fPk)
        dB[i] = (Bfin - Bini)/eps
+
     return dB
 
 #BiSpectrum Covariance for fixed triangular configuration
-def CovB(park, navg, fPk):
+def CovB(park, navg, fPk, parc):
     
     bignumber = 10000000000
 
@@ -114,12 +121,12 @@ def CovB(park, navg, fPk):
         return bignumber
 
     mu12 = (k3**2 - k1**2 - k2**2)/2/k1/k2
-    mu2 = mu1*mu12 - sqrt(1 - mu1**2)*sqrt(1 - mu12**2)*cos(phi12)
+    mu2 = mu1*mu12 - np.sqrt(1 - mu1**2)*np.sqrt(1 - mu12**2)*np.cos(phi12)
     mu3 = -(mu1*k1 + mu2*k2)/k3
     
-    C1 = (Pow(fPk, k1, mu1) + 1/navg)
-    C2 = (Pow(fPk, k2, mu2) + 1/navg)
-    C3 = (Pow(fPk, k3, mu3) + 1/navg)
+    C1 = (Pow(fPk, k1, mu1, parc) + 1/navg)
+    C2 = (Pow(fPk, k2, mu2, parc) + 1/navg)
+    C3 = (Pow(fPk, k3, mu3, parc) + 1/navg)
     C = C1*C2*C3
 
     return C
@@ -139,7 +146,7 @@ def FisherB(parc, Vs, navg, kmax, fPk):
     #Monte Carlo integration in 5D
     etamax = kmax**2/2
     MCvol = etamax**3*2*np.pi
-    RR = random.rand(NMC,5)
+    RR = np.random.rand(NMC,5)
     for i in range(NMC):
         k1 = np.sqrt(2*etamax*RR[i,0])
         k2 = np.sqrt(2*etamax*RR[i,1])
@@ -147,8 +154,8 @@ def FisherB(parc, Vs, navg, kmax, fPk):
         mu1 = 2*RR[i,3] - 1
         phi12 = 2*np.pi*RR[i,4]
         park = (k1, k2, k3, mu1, phi12)
-        CB = CovB(park, navg, fPk)
-        db = dBisp(park, parc, fPk)
+        CB = CovB(park, navg, fPk, parc)
+        dB = dBisp(park, parc, fPk)
         FM += np.outer(dB,dB)/CB
 
     FM *= Vol*MCvol/NMC/2
